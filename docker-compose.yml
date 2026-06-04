@@ -1,0 +1,101 @@
+version: "3.9"
+
+services:
+  app:
+    image: traefik/whoami:latest
+    restart: always
+    container_name: ndm_app
+    networks:
+      ndmnet:
+        ipv4_address: 10.89.0.10
+
+  nginx1:
+    image: nginx:alpine
+    restart: always
+    container_name: ndm_nginx1
+    ports:
+      - "8081:80"
+    volumes:
+      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro,z
+      - ./logs:/var/log/nginx:z
+      - ./html:/srv/report:ro,z
+    environment:
+      - NGINX_ID=1
+    command:
+      - /bin/sh
+      - -c
+      - envsubst '$$NGINX_ID' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'
+    depends_on:
+      - app
+    networks:
+      ndmnet:
+        ipv4_address: 10.89.0.11
+
+  nginx2:
+    image: nginx:alpine
+    restart: always
+    container_name: ndm_nginx2
+    ports:
+      - "8082:80"
+    volumes:
+      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro,z
+      - ./logs:/var/log/nginx:z
+      - ./html:/srv/report:ro,z
+    environment:
+      - NGINX_ID=2
+    command:
+      - /bin/sh
+      - -c
+      - envsubst '$$NGINX_ID' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'
+    depends_on:
+      - app
+    networks:
+      ndmnet:
+        ipv4_address: 10.89.0.12
+
+  nginx3:
+    image: nginx:alpine
+    restart: always
+    container_name: ndm_nginx3
+    ports:
+      - "8083:80"
+    volumes:
+      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro,z
+      - ./logs:/var/log/nginx:z
+      - ./html:/srv/report:ro,z
+    environment:
+      - NGINX_ID=3
+    command:
+      - /bin/sh
+      - -c
+      - envsubst '$$NGINX_ID' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'
+    depends_on:
+      - app
+    networks:
+      ndmnet:
+        ipv4_address: 10.89.0.13
+
+  goaccess:
+    image: allinurl/goaccess:latest
+    restart: always
+    container_name: ndm_goaccess
+    ports:
+      - "7890:7890"
+    volumes:
+      - ./logs:/var/log/nginx:ro,z
+      - ./html:/srv/report:z
+    command: >
+      /var/log/nginx/access.log
+      --log-format='%h - %^ [%d:%t %^] "%r" %s %b "%R" "%u" "%^"'
+      --date-format='%d/%b/%Y'
+      --time-format='%H:%M:%S'
+      --real-time-html
+      --port=7890
+      -o /srv/report/index.html
+
+networks:
+  ndmnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.89.0.0/24

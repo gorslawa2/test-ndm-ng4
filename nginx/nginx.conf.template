@@ -1,0 +1,112 @@
+events {
+    worker_connections 1024;
+}
+
+http {
+    log_format custom '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+    access_log /var/log/nginx/access.log custom;
+
+    geo $is_trusted_proxy {
+        default 0;
+        10.89.0.11 1;
+        10.89.0.12 1;
+        10.89.0.13 1;
+    }
+
+    map $is_trusted_proxy $xff_base {
+        1 $http_x_forwarded_for;
+        0 $remote_addr;
+    }
+
+    map $uri $hop_chain {
+        ~^/hop/([123]+)$ $1;
+        default "";
+    }
+
+    map $hop_chain $rest_after_first {
+        ~^[123](.*)$ $1;
+        default "";
+    }
+
+    server {
+        listen 80;
+
+        location = /goaccess {
+            return 302 /goaccess/;
+        }
+        location /goaccess/ {
+            alias /srv/report/;
+            index index.html;
+            try_files $uri $uri/ =404;
+        }
+
+        location ~ ^/hop/[123]+$ {
+            # CORS
+            add_header 'Access-Control-Allow-Origin' 'http://test.z17.ru:8085' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' '*' always;
+            
+            proxy_hide_header 'Access-Control-Allow-Origin';
+            proxy_hide_header 'Access-Control-Allow-Methods';
+            proxy_hide_header 'Access-Control-Allow-Headers';
+            
+            if ($request_method = 'OPTIONS') {
+                return 204;
+            }
+
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $xff_base;
+            proxy_set_header X-Forwarded-For "$xff_base, $server_addr";
+
+            set $next_step $hop_chain;
+
+            if ($is_trusted_proxy = 1) {
+                set $next_step $rest_after_first;
+            }
+
+            if ($next_step = "") {
+                rewrite ^ /api break;
+                proxy_pass http://10.89.0.10:80;
+            }
+
+            if ($next_step ~ ^1) {
+                rewrite ^ /hop/$next_step break;
+                proxy_pass http://10.89.0.11:80;
+            }
+            if ($next_step ~ ^2) {
+                rewrite ^ /hop/$next_step break;
+                proxy_pass http://10.89.0.12:80;
+            }
+            if ($next_step ~ ^3) {
+                rewrite ^ /hop/$next_step break;
+                proxy_pass http://10.89.0.13:80;
+            }
+
+            rewrite ^ /api break;
+            proxy_pass http://10.89.0.10:80;
+        }
+
+        location / {
+            # CORS
+            add_header 'Access-Control-Allow-Origin' 'http://test.z17.ru:8085' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' '*' always;
+            
+            proxy_hide_header 'Access-Control-Allow-Origin';
+            proxy_hide_header 'Access-Control-Allow-Methods';
+            proxy_hide_header 'Access-Control-Allow-Headers';
+            
+            if ($request_method = 'OPTIONS') {
+                return 204;
+            }
+
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $xff_base;
+            proxy_set_header X-Forwarded-For "$xff_base, $server_addr";
+            rewrite ^ /api break;
+            proxy_pass http://10.89.0.10:80;
+        }
+    }
+}
